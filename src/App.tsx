@@ -1,5 +1,4 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { GoogleGenAI, Type } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Zap, 
@@ -224,35 +223,20 @@ export default function App() {
     setGenerationError(null);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Create a simple, playable HTML5 game based on this prompt: "${aiPrompt}". 
-        The game should be fully contained in a single HTML string (including CSS and JS). 
-        It should be responsive, use modern graphics (canvas or DOM), and be playable with mouse/touch or keyboard.
-        Also provide a short, descriptive prompt for an AI image generator to create a thumbnail for this game.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              htmlCode: {
-                type: Type.STRING,
-                description: "The complete HTML code for the game, including <style> and <script> tags."
-              },
-              imagePrompt: {
-                type: Type.STRING,
-                description: "A prompt for an image generator to create a thumbnail for this game."
-              }
-            },
-            required: ["htmlCode", "imagePrompt"],
-          }
-        }
+      const resp = await fetch("/api/generate-game", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ prompt: aiPrompt })
       });
+      
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server returned ${resp.status}`);
+      }
 
-      const rawText = response.text || "{}";
-      const cleanedText = rawText.replace(/```json\n?|\n?```/g, "").trim();
-      const result = JSON.parse(cleanedText);      
+      const result = await resp.json();
       
       const newGame: Game = {
         id: Date.now().toString(),

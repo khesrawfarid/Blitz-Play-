@@ -233,12 +233,59 @@ async function startServer() {
   });
 
   // API route for generation
-  app.get("/api/debug-key", (req, res) => {
-    res.json({
-      gemini: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 5) : "none",
-      google: process.env.GOOGLE_API_KEY ? process.env.GOOGLE_API_KEY.substring(0, 5) : "none",
-      api: process.env.API_KEY ? process.env.API_KEY.substring(0, 5) : "none",
-    });
+  app.post("/api/generate-game", async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      
+      if (!prompt) {
+        res.status(400).json({ error: "Prompt is required" });
+        return;
+      }
+
+      // Read from process env (checking multiple possible names due to UI bug)
+      const apiKey = process.env.MEIN_NEUER_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+      
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("your-api-key")) {
+        console.error("GEMINI_API_KEY is not set correctly on the server.");
+        res.status(500).json({ error: "API Key still set to placeholder 'MY_GEMINI_API_KEY'." });
+        return;
+      }
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Create a simple, playable HTML5 game based on this prompt: "${prompt}". 
+        The game should be fully contained in a single HTML string (including CSS and JS). 
+        It should be responsive, use modern graphics (canvas or DOM), and be playable with mouse/touch or keyboard.
+        Also provide a short, descriptive prompt for an AI image generator to create a thumbnail for this game.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              htmlCode: {
+                type: Type.STRING,
+                description: "The complete HTML code for the game, including <style> and <script> tags."
+              },
+              imagePrompt: {
+                type: Type.STRING,
+                description: "A prompt for an image generator to create a thumbnail for this game."
+              }
+            },
+            required: ["htmlCode", "imagePrompt"],
+          }
+        }
+      });
+      
+      const rawText = response.text || "{}";
+      const cleanedText = rawText.replace(/```json\n?|\n?```/g, "").trim();
+      const generatedData = JSON.parse(cleanedText);      
+      
+      res.json(generatedData);
+    } catch (error: any) {
+      console.error("Gemini API Error:", error.message || error);
+      res.status(500).json({ error: "Failed to generate game. " + (error.message || "") });
+    }
   });
 
   // Vite middleware for development
