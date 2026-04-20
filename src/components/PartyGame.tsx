@@ -32,7 +32,7 @@ export default function PartyGame({ onExit }: { onExit: () => void }) {
 
   useEffect(() => {
     // Determine the socket URL. Since we are in the same environment (port 3000 serves both), we can connect relatively.
-    socket = io({ transports: ['websocket'] });
+    socket = io();
 
     socket.on('room-update', (r: Room) => {
       setRoom(r);
@@ -69,12 +69,16 @@ export default function PartyGame({ onExit }: { onExit: () => void }) {
   }, [room?.state, timeLeft, selectedAnswer, isHost]);
 
   const handleCreateParty = () => {
-    if (!name) return setError('Bitte gib einen Namen ein!');
+    let playerName = name.trim();
+    if (!playerName) {
+      playerName = 'Host';
+      setName(playerName);
+    }
     setIsHost(true);
     socket?.emit('create-party', (res: any) => {
       if (res.code) {
         setJoinCode(res.code);
-        socket?.emit('join-party', { code: res.code, name }, (joinRes: any) => {
+        socket?.emit('join-party', { code: res.code, name: playerName }, (joinRes: any) => {
           if (joinRes.error) setError(joinRes.error);
         });
       }
@@ -82,9 +86,13 @@ export default function PartyGame({ onExit }: { onExit: () => void }) {
   };
 
   const handleJoinParty = () => {
-    if (!name) return setError('Bitte gib einen Namen ein!');
+    let playerName = name.trim();
+    if (!playerName) {
+      playerName = 'Spieler' + Math.floor(Math.random()*1000);
+      setName(playerName);
+    }
     if (!joinCode) return setError('Bitte gib einen Party Code ein!');
-    socket?.emit('join-party', { code: joinCode.toUpperCase(), name }, (res: any) => {
+    socket?.emit('join-party', { code: joinCode.toUpperCase(), name: playerName }, (res: any) => {
       if (res.error) setError(res.error);
     });
   };
