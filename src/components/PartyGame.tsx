@@ -32,7 +32,16 @@ export default function PartyGame({ onExit, t }: { onExit: () => void, t: any })
 
   useEffect(() => {
     // Determine the socket URL. Since we are in the same environment (port 3000 serves both), we can connect relatively.
-    socket = io();
+    const url = window.location.origin.includes('localhost') ? window.location.origin : window.location.origin;
+    socket = io(url, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket connect error:', err);
+      setError('Verbindung zum Server fehlgeschlagen: ' + err.message);
+    });
 
     socket.on('room-update', (r: Room) => {
       setRoom(r);
