@@ -102,7 +102,7 @@ const QUESTION_BANK: Record<string, any[]> = {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
   const server = http.createServer(app);
   const io = new SocketIOServer(server, { cors: { origin: "*" } });
 
@@ -298,6 +298,8 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     // Ensure assets are always served, even if the user's browser URL has a leftover base path like /BlitzPlayGame/
+    app.use('/BlitzPlayGame/assets', express.static(path.join(distPath, 'assets')));
+    app.use('/BlitzPlayGame', express.static(distPath));
     app.use('/assets', express.static(path.join(distPath, 'assets')));
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
