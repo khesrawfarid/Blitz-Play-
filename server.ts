@@ -158,6 +158,90 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // --- API ROUTES FIRST ---
+  
+  // Health check for API
+  const handleHealth = (req: express.Request, res: express.Response) => res.json({ status: "ok" });
+  app.get("/api/health", handleHealth);
+  app.get("/BlitzPlayGame/api/health", handleHealth);
+
+  // API route for generation
+  const handleGenerateGame = async (req: express.Request, res: express.Response) => {
+    console.log(`[SERVER API] Received ${req.method} request to ${req.url}`);
+    
+    // Explicitly handle preflight if needed (though cors() middleware should do it)
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    try {
+      const { prompt } = req.body;
+      
+      if (!prompt) {
+        res.status(400).json({ error: "Prompt is required" });
+        return;
+      }
+
+      // Read from process env
+      const apiKey = process.env.GEMINI_API_KEY || process.env.MEIN_NEUER_KEY || process.env.GOOGLE_API_KEY;
+      
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("your-api-key")) {
+        console.error("GEMINI_API_KEY is missing or invalid on the server.");
+        res.status(503).json({ error: "API Key logic error on server. Please ensure GEMINI_API_KEY is correctly set in the platform settings." });
+        return;
+      }
+      
+      const ai = new GoogleGenAI(apiKey);
+      const model = ai.getGenerativeModel({
+        model: "gemini-1.5-flash",
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    htmlCode: {
+                        type: Type.STRING,
+                        description: "The complete HTML code for the game, including <style> and <script> tags."
+                    },
+                    imagePrompt: {
+                        type: Type.STRING,
+                        description: "A prompt for an image generator to create a thumbnail for this game."
+                    }
+                },
+                required: ["htmlCode", "imagePrompt"],
+            }
+        }
+      });
+
+      console.log(`[SERVER AI] Calling Gemini for prompt: ${prompt.substring(0, 50)}...`);
+      const result = await model.generateContent(`Create a simple, playable HTML5 game based on this prompt: "${prompt}". 
+        The game should be fully contained in a single HTML string (including CSS and JS). 
+        It should be responsive, use modern graphics (canvas or DOM), and be playable with mouse/touch or keyboard.
+        Also provide a short, descriptive prompt for an AI image generator to create a thumbnail for this game.`);
+      
+      const response = await result.response;
+      const text = response.text();
+      const generatedData = JSON.parse(text);      
+      
+      console.log("[SERVER AI] Successfully generated game data");
+      res.json(generatedData);
+    } catch (error: any) {
+      console.error("Gemini API Error:", error.message || error);
+      res.status(500).json({ error: "Failed to generate game. " + (error.message || "") });
+    }
+  };
+
+  // Register the POST route for multiple variations to be safe
+  app.post("/api/generate-game", handleGenerateGame);
+  app.post("/BlitzPlayGame/api/generate-game", handleGenerateGame);
+  // Also register an "any" route for debugging if 405 persists
+  app.all("/api/generate-game-check", (req, res) => {
+    res.json({ method: req.method, url: req.url, body: req.body });
+  });
+
+  // --- END API ROUTES ---
+
   // Socket.IO Logic
   io.on("connection", (socket) => {
     socket.on("create-party", (callback) => {
@@ -345,71 +429,6 @@ async function startServer() {
     res.send("google-site-verification: google7c842860a3292c60.html");
   });
 
-  // API route for generation
-  const handleGenerateGame = async (req: express.Request, res: express.Response) => {
-    console.log(`[API] ${req.method} ${req.url} received`);
-    try {
-      const { prompt } = req.body;
-      
-      if (!prompt) {
-        res.status(400).json({ error: "Prompt is required" });
-        return;
-      }
-
-      // Read from process env (checking multiple possible names due to UI bug)
-      const apiKey = process.env.GEMINI_API_KEY || process.env.MEIN_NEUER_KEY || process.env.GOOGLE_API_KEY;
-      
-      if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("your-api-key")) {
-        console.error("GEMINI_API_KEY is not set correctly on the server.");
-        res.status(503).json({ error: "API Key logic error on server. Please ensure GEMINI_API_KEY is set in settings." });
-        return;
-      }
-      
-      const ai = new GoogleGenAI(apiKey);
-      const model = ai.getGenerativeModel({
-        model: "gemini-1.5-flash",
-        generationConfig: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    htmlCode: {
-                        type: Type.STRING,
-                        description: "The complete HTML code for the game, including <style> and <script> tags."
-                    },
-                    imagePrompt: {
-                        type: Type.STRING,
-                        description: "A prompt for an image generator to create a thumbnail for this game."
-                    }
-                },
-                required: ["htmlCode", "imagePrompt"],
-            }
-        }
-      });
-
-      const result = await model.generateContent(`Create a simple, playable HTML5 game based on this prompt: "${prompt}". 
-        The game should be fully contained in a single HTML string (including CSS and JS). 
-        It should be responsive, use modern graphics (canvas or DOM), and be playable with mouse/touch or keyboard.
-        Also provide a short, descriptive prompt for an AI image generator to create a thumbnail for this game.`);
-      
-      const response = await result.response;
-      const text = response.text();
-      const generatedData = JSON.parse(text);      
-      
-      res.json(generatedData);
-    } catch (error: any) {
-      console.error("Gemini API Error:", error.message || error);
-      res.status(500).json({ error: "Failed to generate game. " + (error.message || "") });
-    }
-  };
-
-  app.post("/api/generate-game", handleGenerateGame);
-  app.post("/BlitzPlayGame/api/generate-game", handleGenerateGame);
-  
-  // Health check for API
-  app.get("/api/health", (req, res) => res.json({ status: "ok" }));
-  app.get("/BlitzPlayGame/api/health", (req, res) => res.json({ status: "ok" }));
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -419,12 +438,16 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    // Ensure assets are always served, even if the user's browser URL has a leftover base path like /BlitzPlayGame/
+    // Ensure assets are served correctly
     app.use('/BlitzPlayGame/assets', express.static(path.join(distPath, 'assets')));
-    app.use('/BlitzPlayGame', express.static(distPath));
     app.use('/assets', express.static(path.join(distPath, 'assets')));
+    
+    // Serve the SPA
+    app.use('/BlitzPlayGame', express.static(distPath));
     app.use(express.static(distPath));
+    
     app.get('*', (req, res) => {
+      // If none of the above static routes matched, serve index.html
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

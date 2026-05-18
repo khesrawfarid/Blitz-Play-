@@ -241,7 +241,8 @@ export default function App() {
     setGenerationError(null);
     
     try {
-      const url = 'api/generate-game';
+      // Use absolute path to ensure we hit the server routes correctly
+      const url = '/api/generate-game';
         
       const resp = await fetch(url, {
         method: "POST",
